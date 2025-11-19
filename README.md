@@ -111,8 +111,6 @@ After completing Phase 01, proceed to:
 - **Phase 03:** Multi-Language System
 - **Phase 04:** SMTP Management
 
-See `.cursor/phases_index.txt` for the complete development roadmap.
-
 ### 📝 Development Notes
 
 - All passwords are hashed with bcrypt (12 rounds)
@@ -137,4 +135,11 @@ See `.cursor/phases_index.txt` for the complete development roadmap.
 - Use server actions for mutations
 - Follow TypeScript strict mode
 - Test thoroughly before proceeding to next phase
+
+### 📚 Documentation
+
+- **[User Manual](./docs/USER_MANUAL.md)** - Complete guide for end users
+- **[Developer Manual](./docs/DEVELOPER_MANUAL.md)** - Guide for developers
+- **[API Documentation](./docs/API_DOCUMENTATION.md)** - API reference
+- **[Testing Guide](./docs/TESTING.md)** - Testing documentation
 
