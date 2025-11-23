@@ -4,12 +4,10 @@
 
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useEmailBuilder } from "../EmailBuilderContext";
 import type { TextBlock } from "@/lib/email-builder/types";
-import { useVariableInserter } from "@/components/templates/VariableInserter";
-import { Button } from "@/components/ui/button";
-import { Variable } from "lucide-react";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TextBlockEditorProps {
   block: TextBlock;
@@ -24,7 +22,6 @@ export function TextBlockEditor({ block, blockId }: TextBlockEditorProps) {
   const currentBlock = (state.document[blockId] as TextBlock | undefined) || block;
   const initialText = currentBlock?.data?.props?.text || '';
   const [text, setText] = useState(initialText);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Debug: Log block data on mount and when it changes
   useEffect(() => {
@@ -74,25 +71,6 @@ export function TextBlockEditor({ block, blockId }: TextBlockEditorProps) {
     });
   };
 
-  const handleInsertVariable = (variable: string) => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const newText = text.substring(0, start) + variable + text.substring(end);
-    
-    setText(newText);
-    
-    // Set cursor position after inserted variable
-    setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = start + variable.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
-  };
-
-  const { VariableInserter, openVariableInserter } = useVariableInserter(handleInsertVariable);
 
   const style = {
     padding: `${currentBlock.data.style.padding?.top || 0}px ${currentBlock.data.style.padding?.right || 0}px ${currentBlock.data.style.padding?.bottom || 0}px ${currentBlock.data.style.padding?.left || 0}px`,
@@ -106,39 +84,38 @@ export function TextBlockEditor({ block, blockId }: TextBlockEditorProps) {
   if (isEditing) {
     return (
       <div style={style}>
-        <div className="flex items-center justify-end mb-2 gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            type="button" 
-            className="text-xs"
-            onClick={() => openVariableInserter?.()}
-          >
-            <Variable className="h-3.5 w-3.5 mr-1.5" />
-            Insert Variable
-          </Button>
-          <span className="text-xs text-gray-500">or press Ctrl+K</span>
-        </div>
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && e.ctrlKey) {
-              handleBlur();
-            }
-            if (e.key === "Escape") {
-              const currentBlock = (state.document[blockId] as TextBlock | undefined) || block;
-              setText(currentBlock.data.props.text || '');
-              setIsEditing(false);
+        <RichTextEditor
+          content={text}
+          onChange={(html) => {
+            setText(html);
+            // Auto-save on change
+            const currentBlock = state.document[blockId] as TextBlock | undefined;
+            if (currentBlock) {
+              updateBlock(blockId, {
+                data: {
+                  ...currentBlock.data,
+                  props: {
+                    ...currentBlock.data.props,
+                    text: html,
+                  },
+                },
+              });
             }
           }}
-          className="w-full border rounded p-2 outline-none resize-none"
-          autoFocus
-          rows={3}
+          onEscape={() => {
+            handleBlur();
+          }}
+          placeholder="Double-click to edit text..."
+          className="w-full"
         />
-        <VariableInserter />
+        <div className="flex items-center justify-end mt-2 gap-2">
+          <button
+            onClick={handleBlur}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            Press Escape or click outside to finish editing
+          </button>
+        </div>
       </div>
     );
   }

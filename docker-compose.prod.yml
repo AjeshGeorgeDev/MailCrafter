@@ -1,73 +1,72 @@
 version: '3.8'
 
+# Production Docker Compose Configuration
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: mailcrafter-postgres
+    container_name: mailcrafter-postgres-prod
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-emailbuilder}
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - mailcrafter-network
     restart: unless-stopped
+    # Remove port mapping in production for security
+    # ports:
+    #   - "5433:5432"
 
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
-    container_name: mailcrafter-redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    container_name: mailcrafter-redis-prod
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - mailcrafter-network
     restart: unless-stopped
+    # Remove port mapping in production for security
+    # ports:
+    #   - "6379:6379"
 
   # Next.js Application
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mailcrafter-app
+    container_name: mailcrafter-app-prod
     environment:
       # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-emailbuilder}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       
       # NextAuth
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-this-secret-in-production}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
       
-      # Redis
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Redis (with password)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       
       # Encryption
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       
       # Node Environment
       NODE_ENV: production
-      
-      # Optional: Add any other environment variables
-      # SMTP_HOST: ${SMTP_HOST:-}
-      # SMTP_PORT: ${SMTP_PORT:-}
-      # SMTP_USER: ${SMTP_USER:-}
-      # SMTP_PASS: ${SMTP_PASS:-}
     ports:
       - "${APP_PORT:-3000}:3000"
     depends_on:
@@ -90,16 +89,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: mailcrafter-worker
+    container_name: mailcrafter-worker-prod
     environment:
       # Database
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-emailbuilder}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       
-      # Redis
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Redis (with password)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       
       # Encryption
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       
       # Node Environment
       NODE_ENV: production
@@ -121,3 +120,4 @@ volumes:
 networks:
   mailcrafter-network:
     driver: bridge
+

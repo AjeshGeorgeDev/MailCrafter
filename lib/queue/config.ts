@@ -8,10 +8,30 @@ import Redis from "ioredis";
 /**
  * Get Redis connection
  */
+// Cache for Redis connections to avoid creating multiple connections
+let redisConnectionCache: Redis | null = null;
+let redisUrlCache: string | null = null;
+
 export function getRedisConnection(): Redis {
   const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
   
-  return new Redis(redisUrl, {
+  // Always log for debugging in Docker
+  console.log(`[Redis Config] REDIS_URL from env: ${process.env.REDIS_URL || 'NOT SET'}`);
+  console.log(`[Redis Config] Using Redis URL: ${redisUrl.replace(/:[^:@]+@/, ':****@')}`);
+  
+  // If we have a cached connection with the same URL, reuse it
+  if (redisConnectionCache && redisUrlCache === redisUrl) {
+    // Check if connection is still alive
+    if (redisConnectionCache.status === 'ready' || redisConnectionCache.status === 'connect') {
+      return redisConnectionCache;
+    }
+    // Connection is dead, create a new one
+    redisConnectionCache.disconnect();
+    redisConnectionCache = null;
+  }
+  
+  // Create new connection
+  const redis = new Redis(redisUrl, {
     maxRetriesPerRequest: 3,
     retryStrategy: (times) => {
       const delay = Math.min(times * 50, 2000);
@@ -24,7 +44,35 @@ export function getRedisConnection(): Redis {
       }
       return false;
     },
+    // Enable ready event to know when connection is established
+    enableReadyCheck: true,
+    // Lazy connect - don't connect immediately
+    lazyConnect: false,
   });
+  
+  // Cache the connection
+  redisConnectionCache = redis;
+  redisUrlCache = redisUrl;
+  
+  // Log connection events
+  redis.on('connect', () => {
+    console.log(`[Redis] Connected to: ${redisUrl.replace(/:[^:@]+@/, ':****@')}`);
+  });
+  
+  redis.on('error', (err) => {
+    console.error(`[Redis] Connection error:`, err.message);
+  });
+  
+  redis.on('close', () => {
+    console.log(`[Redis] Connection closed`);
+    // Clear cache on close
+    if (redisConnectionCache === redis) {
+      redisConnectionCache = null;
+      redisUrlCache = null;
+    }
+  });
+  
+  return redis;
 }
 
 /**

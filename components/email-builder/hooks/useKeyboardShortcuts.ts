@@ -13,9 +13,12 @@ export function useKeyboardShortcuts() {
     redo,
     deleteBlock,
     duplicateBlock,
+    copyBlock,
+    pasteBlock,
     selectBlock,
     canUndo,
     canRedo,
+    hasClipboard,
   } = useEmailBuilder();
 
   useEffect(() => {
@@ -93,15 +96,19 @@ export function useKeyboardShortcuts() {
 
       // Ctrl+C or Cmd+C: Copy (when block selected)
       if ((event.ctrlKey || event.metaKey) && event.key === "c" && state.selectedBlockId) {
-        // Copy to clipboard will be handled separately
-        // For now, just prevent default
+        event.preventDefault();
+        copyBlock(state.selectedBlockId);
         return;
       }
 
       // Ctrl+V or Cmd+V: Paste
-      if ((event.ctrlKey || event.metaKey) && event.key === "v") {
-        // Paste will be handled separately
-        // For now, just prevent default
+      if ((event.ctrlKey || event.metaKey) && event.key === "v" && hasClipboard) {
+        event.preventDefault();
+        // Paste at the end of root children, or after selected block
+        const position = state.selectedBlockId 
+          ? state.document.childrenIds.indexOf(state.selectedBlockId) + 1
+          : state.document.childrenIds.length;
+        pasteBlock(position);
         return;
       }
     };
@@ -110,6 +117,6 @@ export function useKeyboardShortcuts() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [state.selectedBlockId, canUndo, canRedo, undo, redo, deleteBlock, duplicateBlock, selectBlock]);
+  }, [state.selectedBlockId, state.document, canUndo, canRedo, undo, redo, deleteBlock, duplicateBlock, copyBlock, pasteBlock, selectBlock, hasClipboard]);
 }
 

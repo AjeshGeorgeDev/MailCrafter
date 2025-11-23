@@ -17,6 +17,8 @@ import type {
   EmailBlock,
   BlockType,
 } from "@/lib/email-builder/types";
+import { generateBlockId } from "@/lib/email-builder/blocks";
+import { toast } from "sonner";
 
 // ============================================================================
 // Context Interface
@@ -35,6 +37,8 @@ interface EmailBuilderContextValue {
   moveBlock: (blockId: string, newPosition: number, newParentId?: string, columnIndex?: number) => void;
   selectBlock: (blockId: string | null) => void;
   duplicateBlock: (blockId: string) => void;
+  copyBlock: (blockId: string) => void;
+  pasteBlock: (position: number, parentId?: string, columnIndex?: number) => void;
   undo: () => void;
   redo: () => void;
   setDocument: (document: EmailBuilderDocument) => void;
@@ -47,6 +51,7 @@ interface EmailBuilderContextValue {
   canRedo: boolean;
   getBlock: (blockId: string) => EmailBlock | undefined;
   availableLanguages: string[];
+  hasClipboard: boolean;
 }
 
 const EmailBuilderContext = createContext<EmailBuilderContextValue | null>(null);
@@ -86,6 +91,9 @@ export function EmailBuilderProvider({
   const allStructuresRef = useRef<Record<string, any> | undefined>(
     initialAllStructures ? JSON.parse(JSON.stringify(initialAllStructures)) : undefined
   );
+  
+  // Clipboard storage - stores copied block data
+  const clipboardRef = useRef<EmailBlock | null>(null);
   
   // Update allStructures when prop changes - always deep copy
   useEffect(() => {
@@ -274,6 +282,208 @@ export function EmailBuilderProvider({
       payload: { blockId },
     });
   }, []);
+
+  const copyBlock = useCallback((blockId: string) => {
+    const block = state.document[blockId] as EmailBlock | undefined;
+    if (!block) {
+      console.warn(`Block ${blockId} not found for copying`);
+      return;
+    }
+    
+    // Copy the block and recursively copy all its children
+    const copyBlockTree = (id: string): EmailBlock => {
+      const blockToCopy = state.document[id] as EmailBlock;
+      const cloned = JSON.parse(JSON.stringify(blockToCopy)) as EmailBlock;
+      
+      // Handle nested children
+      if (cloned.type === "Container") {
+        const containerProps = cloned.data.props as any;
+        if (containerProps.childrenIds && Array.isArray(containerProps.childrenIds)) {
+          // Recursively copy all children
+          containerProps.childrenIds = containerProps.childrenIds.map((childId: string) => {
+            const childBlock = copyBlockTree(childId);
+            // Store child in a temporary structure - we'll need to store the full tree
+            return childId; // This will be replaced with new IDs on paste
+          });
+        }
+      } else if (cloned.type === "Columns") {
+        const columnsProps = cloned.data.props as any;
+        if (columnsProps.columns && Array.isArray(columnsProps.columns)) {
+          columnsProps.columns = columnsProps.columns.map((column: any) => ({
+            childrenIds: (column.childrenIds || []).map((childId: string) => {
+              return childId; // This will be replaced with new IDs on paste
+            }),
+          }));
+        }
+      }
+      
+      return cloned;
+    };
+    
+    // For now, copy just the block - nested children will need special handling
+    // We'll store a block tree structure
+    const blockTree = {
+      root: copyBlockTree(blockId),
+      children: {} as Record<string, EmailBlock>,
+    };
+    
+    // Recursively collect all children
+    const collectChildren = (id: string) => {
+      const block = state.document[id] as EmailBlock;
+      if (block.type === "Container") {
+        const containerProps = block.data.props as any;
+        if (containerProps.childrenIds && Array.isArray(containerProps.childrenIds)) {
+          containerProps.childrenIds.forEach((childId: string) => {
+            blockTree.children[childId] = JSON.parse(JSON.stringify(state.document[childId])) as EmailBlock;
+            collectChildren(childId);
+          });
+        }
+      } else if (block.type === "Columns") {
+        const columnsProps = block.data.props as any;
+        if (columnsProps.columns && Array.isArray(columnsProps.columns)) {
+          columnsProps.columns.forEach((column: any) => {
+            (column.childrenIds || []).forEach((childId: string) => {
+              blockTree.children[childId] = JSON.parse(JSON.stringify(state.document[childId])) as EmailBlock;
+              collectChildren(childId);
+            });
+          });
+        }
+      }
+    };
+    
+    collectChildren(blockId);
+    
+    clipboardRef.current = blockTree.root;
+    
+    // Store full tree structure in localStorage
+    try {
+      localStorage.setItem('email-builder-clipboard', JSON.stringify(blockTree));
+      toast.success("Block copied to clipboard");
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+      toast.error("Failed to copy block");
+    }
+  }, [state.document]);
+
+  const pasteBlock = useCallback((position: number, parentId?: string, columnIndex?: number) => {
+    // Try to get from localStorage (which has the full tree)
+    let blockTree: { root: EmailBlock; children: Record<string, EmailBlock> } | null = null;
+    
+    try {
+      const stored = localStorage.getItem('email-builder-clipboard');
+      if (stored) {
+        blockTree = JSON.parse(stored);
+        if (blockTree && blockTree.root) {
+          clipboardRef.current = blockTree.root;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load from localStorage:', error);
+    }
+    
+    // Fallback to ref if localStorage failed
+    if (!blockTree && clipboardRef.current) {
+      blockTree = {
+        root: clipboardRef.current,
+        children: {},
+      };
+    }
+    
+    if (!blockTree || !blockTree.root) {
+      console.warn('No block in clipboard to paste');
+      return;
+    }
+
+    const newDocument = JSON.parse(JSON.stringify(state.document)) as EmailBuilderDocument;
+    const idMap = new Map<string, string>(); // Map old IDs to new IDs
+    
+    // Function to recursively paste block and all children with new IDs
+    const pasteBlockRecursive = (block: EmailBlock, oldId?: string): string => {
+      const newId = generateBlockId();
+      if (oldId) {
+        idMap.set(oldId, newId);
+      }
+      
+      const clonedBlock = JSON.parse(JSON.stringify(block)) as EmailBlock;
+      
+      // Handle nested children
+      if (clonedBlock.type === "Container") {
+        const containerProps = clonedBlock.data.props as any;
+        if (containerProps.childrenIds && Array.isArray(containerProps.childrenIds)) {
+          // Map old child IDs to new IDs and paste children
+          containerProps.childrenIds = containerProps.childrenIds.map((oldChildId: string) => {
+            const childBlock = blockTree!.children[oldChildId];
+            if (childBlock) {
+              return pasteBlockRecursive(childBlock, oldChildId);
+            }
+            // If child not found in tree, generate new ID (shouldn't happen)
+            return generateBlockId();
+          });
+        }
+      } else if (clonedBlock.type === "Columns") {
+        const columnsProps = clonedBlock.data.props as any;
+        if (columnsProps.columns && Array.isArray(columnsProps.columns)) {
+          columnsProps.columns = columnsProps.columns.map((column: any, colIdx: number) => {
+            const originalColumn = (blockTree!.root.data.props as any).columns?.[colIdx];
+            return {
+              childrenIds: (originalColumn?.childrenIds || column.childrenIds || []).map((oldChildId: string) => {
+                const childBlock = blockTree!.children[oldChildId];
+                if (childBlock) {
+                  return pasteBlockRecursive(childBlock, oldChildId);
+                }
+                return generateBlockId();
+              }),
+            };
+          });
+        }
+      }
+      
+      newDocument[newId] = clonedBlock;
+      return newId;
+    };
+
+    const newBlockId = pasteBlockRecursive(blockTree.root);
+    
+    // Add to parent
+    if (columnIndex !== undefined && parentId) {
+      const parent = newDocument[parentId] as EmailBlock | undefined;
+      if (parent && parent.type === "Columns") {
+        const columnsBlock = parent as any;
+        if (columnsBlock.data.props.columns?.[columnIndex]) {
+          const column = columnsBlock.data.props.columns[columnIndex];
+          if (!column.childrenIds) {
+            column.childrenIds = [];
+          }
+          column.childrenIds.splice(position, 0, newBlockId);
+        }
+      }
+    } else if (parentId) {
+      const parent = newDocument[parentId] as EmailBlock | undefined;
+      if (parent && parent.type === "Container") {
+        const containerProps = parent.data.props as any;
+        if (!containerProps.childrenIds) {
+          containerProps.childrenIds = [];
+        }
+        containerProps.childrenIds.splice(position, 0, newBlockId);
+      }
+    } else {
+      // Add to root
+      newDocument.childrenIds.splice(position, 0, newBlockId);
+    }
+
+    dispatch({
+      type: "SET_DOCUMENT",
+      payload: { document: newDocument },
+    });
+    
+    // Select the newly pasted block
+    dispatch({
+      type: "SELECT_BLOCK",
+      payload: { blockId: newBlockId },
+    });
+    
+    toast.success("Block pasted");
+  }, [state.document]);
 
   const undo = useCallback(() => {
     dispatch({ type: "UNDO" });
@@ -547,6 +757,9 @@ export function EmailBuilderProvider({
   
   // Get available languages from allStructures
   const availableLanguages = allStructures ? Object.keys(allStructures) : (defaultLanguage ? [defaultLanguage] : []);
+  
+  // Check if clipboard has content
+  const hasClipboard = clipboardRef.current !== null || (typeof window !== 'undefined' && localStorage.getItem('email-builder-clipboard') !== null);
 
   const value: EmailBuilderContextValue = {
     state,
@@ -559,6 +772,8 @@ export function EmailBuilderProvider({
     moveBlock,
     selectBlock,
     duplicateBlock,
+    copyBlock,
+    pasteBlock,
     undo,
     redo,
     setDocument,
@@ -569,6 +784,7 @@ export function EmailBuilderProvider({
     canRedo,
     getBlock,
     availableLanguages,
+    hasClipboard,
   };
 
   return (

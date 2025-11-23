@@ -33,6 +33,8 @@ export type EditorAction =
   | { type: "MOVE_BLOCK"; payload: { blockId: string; newPosition: number; newParentId?: string; columnIndex?: number } }
   | { type: "SELECT_BLOCK"; payload: { blockId: string | null } }
   | { type: "DUPLICATE_BLOCK"; payload: { blockId: string } }
+  | { type: "COPY_BLOCK"; payload: { blockId: string } }
+  | { type: "PASTE_BLOCK"; payload: { position: number; parentId?: string; columnIndex?: number } }
   | { type: "UNDO" }
   | { type: "REDO" }
   | { type: "SET_DOCUMENT"; payload: { document: EmailBuilderDocument } }
@@ -417,6 +419,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       };
 
       return addToHistory(newState);
+    }
+
+    case "COPY_BLOCK": {
+      // Copy action doesn't modify state, but we store it in a way that can be accessed
+      // The actual clipboard storage will be handled in the context
+      return state;
+    }
+
+    case "PASTE_BLOCK": {
+      // Paste action will be handled in the context with clipboard data
+      // This is a placeholder - actual paste logic needs clipboard data from context
+      return state;
     }
 
     case "UNDO": {

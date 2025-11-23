@@ -7,6 +7,12 @@ export default withAuth(
     const isAuth = !!token;
     const isAuthPage = req.nextUrl.pathname.startsWith("/login") || 
                        req.nextUrl.pathname.startsWith("/register");
+    const isSetupPage = req.nextUrl.pathname.startsWith("/setup");
+
+    // Allow access to setup page without authentication
+    if (isSetupPage) {
+      return NextResponse.next();
+    }
 
     if (isAuthPage) {
       if (isAuth) {
@@ -38,7 +44,8 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/login",
-    "/register"
+    "/register",
+    "/setup"
   ],
 };
 

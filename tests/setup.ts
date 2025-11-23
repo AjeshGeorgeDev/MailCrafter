@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import '@testing-library/jest-dom';
 
 // Mock environment variables
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test_db';

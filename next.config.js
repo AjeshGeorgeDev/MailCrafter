@@ -38,6 +38,8 @@ const nextConfig = {
   serverExternalPackages: ['bull'],
   // Add empty turbopack config to silence the warning
   turbopack: {},
+  // Enable standalone output for Docker
+  output: 'standalone',
 };
 
 module.exports = nextConfig;

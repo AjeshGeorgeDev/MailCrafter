@@ -11,10 +11,7 @@
     "lint": "next lint",
     "postinstall": "prisma generate",
     "test": "vitest",
-    "test:watch": "vitest --watch",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
-    "test:language-switch": "tsx test-language-switch.ts"
+    "test:watch": "vitest --watch"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

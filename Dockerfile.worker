@@ -1,0 +1,56 @@
+# Dockerfile for MailCrafter Email Worker
+# Optimized for production with minimal image size
+
+FROM node:20-alpine AS base
+
+# Install system dependencies
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Install dependencies stage
+FROM base AS deps
+WORKDIR /app
+
+# Copy package files and Prisma schema (needed for postinstall script)
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+
+# Install all dependencies (including dev for tsx)
+RUN npm ci --ignore-scripts && \
+    npm cache clean --force
+
+# Production stage
+FROM base AS runner
+WORKDIR /app
+
+# Copy dependencies
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/package-lock.json* ./package-lock.json
+
+# Copy Prisma schema
+COPY --from=deps /app/prisma ./prisma
+
+# Copy only necessary application files
+COPY --chown=node:node workers ./workers
+COPY --chown=node:node lib ./lib
+COPY --chown=node:node app ./app
+COPY --chown=node:node tsconfig.json ./tsconfig.json
+
+# Generate Prisma Client and verify it exists
+RUN npx prisma generate && \
+    test -d node_modules/.prisma || (echo "ERROR: Prisma client not generated" && exit 1)
+
+# Verify tsx is available
+RUN test -f node_modules/.bin/tsx || (echo "ERROR: tsx not found in node_modules/.bin" && exit 1)
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nodejs && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+# Use npx to run tsx (ensures it's found in node_modules/.bin)
+CMD ["npx", "tsx", "workers/email-worker.ts"]

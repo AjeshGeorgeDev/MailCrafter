@@ -12,6 +12,7 @@ import {
   Users,
   Mail,
   AlertCircle,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,11 @@ const navItems = [
     title: "Contacts",
     href: "/dashboard/contacts",
     icon: Users,
+  },
+  {
+    title: "Segments",
+    href: "/dashboard/segments",
+    icon: Filter,
   },
   {
     title: "Email Logs",

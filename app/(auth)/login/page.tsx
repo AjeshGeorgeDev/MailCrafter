@@ -22,6 +22,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const setupComplete = searchParams.get("setup") === "complete";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -73,6 +74,11 @@ function LoginForm() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {setupComplete && (
+              <div className="rounded-md bg-green-50 p-3 text-sm text-green-800">
+                Setup completed successfully! Please sign in with your new account.
+              </div>
+            )}
             {error && (
               <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
                 {error}

@@ -39,6 +39,12 @@ Welcome to the MailCrafter documentation! This directory contains comprehensive 
   - Running tests
   - Coverage reports
 
+- **[Development Roadmap](../.cursor/ROADMAP.md)** - What's next in development
+  - Current status
+  - Priority features
+  - Technical debt
+  - Quick wins
+
 
 ## 🚀 Quick Start
 

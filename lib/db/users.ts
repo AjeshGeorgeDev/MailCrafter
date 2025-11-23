@@ -11,6 +11,7 @@ export interface CreateUserData {
 export interface UpdateUserData {
   name?: string;
   email?: string;
+  password?: string;
   role?: Role;
   image?: string;
 }

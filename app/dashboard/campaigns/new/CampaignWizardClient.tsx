@@ -51,9 +51,10 @@ import {
   Eye,
   Send,
 } from "lucide-react";
-import { createCampaign, addCampaignRecipients } from "@/app/actions/campaigns";
+import { createCampaign, addCampaignRecipients, addCampaignRecipientsFromSegment } from "@/app/actions/campaigns";
 import { toast } from "sonner";
 import { CSVImport } from "@/components/campaigns/CSVImport";
+import { SegmentSelector } from "@/components/campaigns/SegmentSelector";
 import type { CSVRecipient } from "@/lib/campaigns/csv-importer";
 
 const campaignSchema = z.object({
@@ -103,6 +104,8 @@ export function CampaignWizardClient({
   const [currentStep, setCurrentStep] = useState(1);
   const [isPending, startTransition] = useTransition();
   const [recipients, setRecipients] = useState<Array<{ email: string; name?: string; variables?: Record<string, any> }>>([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const [selectedSegmentCount, setSelectedSegmentCount] = useState<number>(0);
   const [scheduledDate, setScheduledDate] = useState<Date | undefined>(undefined);
   const [scheduledTime, setScheduledTime] = useState("");
 
@@ -173,14 +176,27 @@ export function CampaignWizardClient({
       });
 
       if (result.success && result.campaign) {
-        // Add recipients if any
+        // Add recipients from segment if selected
+        if (selectedSegmentId) {
+          const segmentResult = await addCampaignRecipientsFromSegment(
+            result.campaign.id,
+            selectedSegmentId
+          );
+          if (segmentResult.error) {
+            toast.warning("Campaign created but failed to add recipients from segment");
+          } else if (segmentResult.success) {
+            toast.success(`Added ${segmentResult.added || 0} recipients from segment`);
+          }
+        }
+        
+        // Add recipients from CSV if any
         if (recipients.length > 0) {
           const recipientsResult = await addCampaignRecipients(
             result.campaign.id,
             recipients
           );
           if (recipientsResult.error) {
-            toast.warning("Campaign created but failed to add recipients");
+            toast.warning("Campaign created but failed to add CSV recipients");
           }
         }
 
@@ -428,24 +444,54 @@ export function CampaignWizardClient({
               <CardHeader>
                 <CardTitle>Recipients</CardTitle>
                 <CardDescription>
-                  Add recipients for this campaign via CSV import
+                  Add recipients for this campaign via segment or CSV import
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <CSVImport
-                  onImport={(recipients) => {
-                    setRecipients(recipients);
-                    toast.success(`Imported ${recipients.length} recipients`);
-                  }}
-                />
-                {recipients.length > 0 && (
-                  <div className="mt-4 p-4 bg-muted rounded-lg">
-                    <p className="font-medium">
-                      {recipients.length} recipient{recipients.length !== 1 ? "s" : ""} added
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      First few: {recipients.slice(0, 3).map((r) => r.email).join(", ")}
-                      {recipients.length > 3 && ` and ${recipients.length - 3} more...`}
+              <CardContent className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-medium mb-3">Select Segment</h3>
+                  <SegmentSelector
+                    onSegmentSelect={(segmentId, contactCount) => {
+                      setSelectedSegmentId(segmentId);
+                      setSelectedSegmentCount(contactCount);
+                    }}
+                    selectedSegmentId={selectedSegmentId}
+                  />
+                </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium mb-3">Import from CSV</h3>
+                  <CSVImport
+                    onImport={(recipients) => {
+                      setRecipients(recipients);
+                      toast.success(`Imported ${recipients.length} recipients`);
+                    }}
+                  />
+                </div>
+
+                {(selectedSegmentId || recipients.length > 0) && (
+                  <div className="mt-4 p-4 bg-muted rounded-lg space-y-2">
+                    {selectedSegmentId && (
+                      <p className="font-medium">
+                        {selectedSegmentCount} contact{selectedSegmentCount !== 1 ? "s" : ""} from segment
+                      </p>
+                    )}
+                    {recipients.length > 0 && (
+                      <p className="font-medium">
+                        {recipients.length} recipient{recipients.length !== 1 ? "s" : ""} from CSV
+                      </p>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Total: {(selectedSegmentCount || 0) + recipients.length} recipient{(selectedSegmentCount || 0) + recipients.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                 )}

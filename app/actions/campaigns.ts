@@ -92,6 +92,89 @@ export async function addCampaignRecipients(
 }
 
 /**
+ * Add recipients from segment to campaign
+ */
+export async function addCampaignRecipientsFromSegment(
+  campaignId: string,
+  segmentId: string
+) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { error: "Unauthorized" };
+    }
+
+    // Get user's organization
+    const orgMember = await prisma.organizationMember.findFirst({
+      where: { userId: user.id },
+      include: { organization: true },
+    });
+
+    if (!orgMember?.organization) {
+      return { error: "User is not part of an organization" };
+    }
+
+    // Verify campaign exists and belongs to organization
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        organizationId: orgMember.organization.id,
+      },
+    });
+
+    if (!campaign) {
+      return { error: "Campaign not found" };
+    }
+
+    // Get segment contacts
+    const { getSegmentContacts } = await import("@/lib/db/segments");
+    const contacts = await getSegmentContacts(segmentId, orgMember.organization.id);
+
+    if (contacts.length === 0) {
+      return { error: "Segment has no matching contacts" };
+    }
+
+    // Filter only subscribed contacts
+    const subscribedContacts = contacts.filter(
+      (contact) => contact.status === "SUBSCRIBED"
+    );
+
+    if (subscribedContacts.length === 0) {
+      return { error: "Segment has no subscribed contacts" };
+    }
+
+    // Create recipients from segment contacts
+    await prisma.campaignRecipient.createMany({
+      data: subscribedContacts.map((contact) => ({
+        campaignId,
+        email: contact.email,
+        name: contact.firstName || contact.lastName
+          ? `${contact.firstName || ""} ${contact.lastName || ""}`.trim()
+          : null,
+        variables: contact.customFields as Record<string, any> | undefined,
+      })),
+      skipDuplicates: true, // Skip duplicate emails
+    });
+
+    // Update recipient count
+    const recipientCount = await prisma.campaignRecipient.count({
+      where: { campaignId },
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { recipientCount },
+    });
+
+    revalidatePath(`/dashboard/campaigns/${campaignId}`);
+    return { success: true, count: recipientCount, added: subscribedContacts.length };
+  } catch (error) {
+    console.error("Add campaign recipients from segment error:", error);
+    return { error: "Failed to add recipients from segment" };
+  }
+}
+
+/**
  * Create campaign
  */
 export async function createCampaign(data: z.infer<typeof createCampaignSchema>) {

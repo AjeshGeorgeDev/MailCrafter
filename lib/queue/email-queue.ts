@@ -1,46 +1,128 @@
 /**
  * Email Queue Instances
  * Create and export Bull queues for email processing
+ * Uses lazy initialization to avoid connecting during Next.js build
  */
 
-import Queue from "bull";
+import QueueDefault from "bull";
+import type { Queue as QueueType } from "bull";
 import { getRedisConnection, queueOptions, CONCURRENCY } from "./config";
 
-// Redis connection
-const redis = getRedisConnection();
+// Lazy initialization - only create queues when actually needed (at runtime, not build time)
+let redis: ReturnType<typeof getRedisConnection> | null = null;
+let _immediateEmailQueue: QueueType | null = null;
+let _scheduledEmailQueue: QueueType | null = null;
+let _bulkEmailQueue: QueueType | null = null;
+
+function getRedis() {
+  if (!redis) {
+    redis = getRedisConnection();
+  }
+  return redis;
+}
+
+function initializeQueues() {
+  if (_immediateEmailQueue && _scheduledEmailQueue && _bulkEmailQueue) {
+    return; // Already initialized
+  }
+
+  // Get Redis URL from environment - Bull Queue can accept connection string directly
+  const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+  console.log(`[Queue Init] Initializing queues with Redis URL: ${redisUrl.replace(/:[^:@]+@/, ':****@')}`);
+
+  // Bull Queue accepts connection string, which is more reliable than passing a Redis instance
+  // This ensures Bull uses the correct Redis URL from environment
+  const redisConfig = redisUrl;
+
+  if (!_immediateEmailQueue) {
+    _immediateEmailQueue = new QueueDefault("immediate-email", {
+      redis: redisConfig,
+      ...queueOptions,
+    } as any);
+  }
+
+  if (!_scheduledEmailQueue) {
+    _scheduledEmailQueue = new QueueDefault("scheduled-email", {
+      redis: redisConfig,
+      ...queueOptions,
+    } as any);
+  }
+
+  if (!_bulkEmailQueue) {
+    _bulkEmailQueue = new QueueDefault("bulk-email", {
+      redis: redisConfig,
+      ...queueOptions,
+    } as any);
+  }
+
+  // Setup event handlers only once
+  setupQueueEventHandlers();
+}
 
 /**
  * Immediate Email Queue
  * For emails that should be sent immediately
  */
-export const immediateEmailQueue = new Queue("immediate-email", {
-  redis: redis as any, // Bull accepts Redis instance but types are strict
-  ...queueOptions,
-} as any);
+export function getImmediateEmailQueue(): QueueType {
+  initializeQueues();
+  return _immediateEmailQueue!;
+}
 
 /**
  * Scheduled Email Queue
  * For emails scheduled for future delivery
  */
-export const scheduledEmailQueue = new Queue("scheduled-email", {
-  redis: redis as any, // Bull accepts Redis instance but types are strict
-  ...queueOptions,
-} as any);
+export function getScheduledEmailQueue(): QueueType {
+  initializeQueues();
+  return _scheduledEmailQueue!;
+}
 
 /**
  * Bulk Email Queue
  * For bulk campaign emails
  */
-export const bulkEmailQueue = new Queue("bulk-email", {
-  redis: redis as any, // Bull accepts Redis instance but types are strict
-  ...queueOptions,
-} as any);
+export function getBulkEmailQueue(): QueueType {
+  initializeQueues();
+  return _bulkEmailQueue!;
+}
+
+// Export as properties for backward compatibility (lazy getters)
+// Use a more robust Proxy that handles all methods including delayed, add, etc.
+function createQueueProxy(getQueue: () => QueueType): QueueType {
+  return new Proxy({} as QueueType, {
+    get(target, prop) {
+      const queue = getQueue();
+      const value = queue[prop as keyof QueueType];
+      // If it's a function, bind it to the queue instance
+      if (typeof value === 'function') {
+        return value.bind(queue);
+      }
+      return value;
+    },
+    has(target, prop) {
+      const queue = getQueue();
+      return prop in queue;
+    },
+    ownKeys(target) {
+      const queue = getQueue();
+      return Reflect.ownKeys(queue);
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      const queue = getQueue();
+      return Reflect.getOwnPropertyDescriptor(queue, prop);
+    },
+  }) as QueueType;
+}
+
+export const immediateEmailQueue = createQueueProxy(getImmediateEmailQueue);
+export const scheduledEmailQueue = createQueueProxy(getScheduledEmailQueue);
+export const bulkEmailQueue = createQueueProxy(getBulkEmailQueue);
 
 /**
  * Queue event handlers for monitoring
  */
-export function setupQueueEventHandlers() {
-  const queues = [immediateEmailQueue, scheduledEmailQueue, bulkEmailQueue];
+function setupQueueEventHandlers() {
+  const queues = [_immediateEmailQueue, _scheduledEmailQueue, _bulkEmailQueue].filter(Boolean) as QueueType[];
 
   queues.forEach((queue) => {
     queue.on("completed", (job) => {
@@ -61,18 +143,16 @@ export function setupQueueEventHandlers() {
   });
 }
 
-// Setup event handlers
-setupQueueEventHandlers();
-
 /**
  * Close all queues (for graceful shutdown)
  */
 export async function closeAllQueues() {
   await Promise.all([
-    immediateEmailQueue.close(),
-    scheduledEmailQueue.close(),
-    bulkEmailQueue.close(),
-  ]);
-  redis.disconnect();
+    _immediateEmailQueue?.close(),
+    _scheduledEmailQueue?.close(),
+    _bulkEmailQueue?.close(),
+  ].filter(Boolean));
+  if (redis) {
+    redis.disconnect();
+  }
 }
-

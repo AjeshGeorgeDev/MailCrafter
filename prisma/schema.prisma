@@ -127,17 +127,18 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts         Account[]
-  sessions         Session[]
-  organizations    OrganizationMember[]
-  templates        Template[]
-  templateVersions TemplateVersion[]
-  campaigns        Campaign[]
-  snippets         Snippet[]
-  assets           Asset[]
-  twoFactorAuth    TwoFactorAuth?
-  auditLogs        AuditLog[]
-  notifications    Notification[]
+  accounts            Account[]
+  sessions            Session[]
+  organizations       OrganizationMember[]
+  templates           Template[]
+  templateVersions    TemplateVersion[]
+  campaigns           Campaign[]
+  snippets            Snippet[]
+  assets              Asset[]
+  twoFactorAuth       TwoFactorAuth?
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
   @@map("users")
@@ -183,6 +184,22 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expires   DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expires])
+  @@map("password_reset_tokens")
 }
 
 model Organization {
