@@ -285,6 +285,57 @@ docker-compose up -d --scale worker=3
 | `ENCRYPTION_KEY` | Yes | Encryption key (32+ chars) | - |
 | `NODE_ENV` | No | Node environment | `production` |
 
+## Coolify Deployment
+
+MailCrafter includes a health check endpoint for Coolify and other deployment platforms.
+
+### Health Check Configuration
+
+The application provides a health check endpoint at `/api/health` that:
+- Returns HTTP 200 when the application and database are healthy
+- Returns HTTP 503 when there are issues
+- Checks database connectivity automatically
+
+### Configuring in Coolify
+
+1. **Deploy your application** in Coolify as usual
+2. **Configure Health Check**:
+   - Go to your application settings in Coolify
+   - Navigate to the "Health Check" section
+   - Set the health check path to: `/api/health`
+   - Set the health check interval (recommended: 30 seconds)
+   - Set the timeout (recommended: 10 seconds)
+   - Set retries (recommended: 3)
+
+3. **Health Check Endpoint Details**:
+   - **Path**: `/api/health`
+   - **Method**: `GET`
+   - **Expected Response**: HTTP 200 with JSON body containing `status: "healthy"`
+   - **Unhealthy Response**: HTTP 503 with JSON body containing `status: "unhealthy"`
+
+### Testing the Health Check
+
+You can test the health check endpoint manually:
+
+```bash
+# Test locally
+curl http://localhost:3000/api/health
+
+# Test in production
+curl https://your-domain.com/api/health
+```
+
+Expected healthy response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "checks": {
+    "database": true
+  }
+}
+```
+
 ## Support
 
 For issues or questions:
